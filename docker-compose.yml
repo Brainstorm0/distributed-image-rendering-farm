@@ -1,0 +1,10 @@
+services:
+  mock-a:
+    build: ./mock_service
+    environment:
+      NODE_NAME: mock-a
+
+  mock-b:
+    build: ./mock_service
+    environment:
+      NODE_NAME: mock-b
