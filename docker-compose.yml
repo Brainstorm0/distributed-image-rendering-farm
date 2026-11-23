@@ -43,6 +43,18 @@ services:
       timeout: 3s
       retries: 15
 
+  render-api:
+    build: ./render_api
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: renderfarm
+      PGUSER: renderfarm
+      PGPASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        
 volumes:
   postgres_data:
   redis_data:
