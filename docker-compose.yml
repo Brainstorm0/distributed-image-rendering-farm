@@ -54,6 +54,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  publisher:
+    build: ./publisher
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: renderfarm
+      PGUSER: renderfarm
+      PGPASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
         
 volumes:
   postgres_data:
