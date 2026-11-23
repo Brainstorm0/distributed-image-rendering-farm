@@ -16,3 +16,21 @@ services:
     build: ./mock_service
     environment:
       NODE_NAME: mock-b
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: renderfarm
+      POSTGRES_USER: renderfarm
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "renderfarm", "-d", "renderfarm"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  postgres_data:
