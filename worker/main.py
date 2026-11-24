@@ -73,7 +73,7 @@ def process_job(job_id):
                 attempts = attempts + 1,
                 started_at = CURRENT_TIMESTAMP
             WHERE id = %s AND status IN ('queued', 'processing')
-            RETURNING width, height, max_iterations, attempts
+            RETURNING width, height, max_iterations, attempts, COALESCE(trace_id, id)
             """,
             (job_id,),
         ).fetchone()
@@ -81,15 +81,16 @@ def process_job(job_id):
             # The job is already finished or has been deleted.
             return True
 
-        width, height, iterations, attempt = job
-        log("render_started", job_id=str(job_id), attempt=attempt)
+        width, height, iterations, attempt, trace_id = job
+        context = {"job_id": str(job_id), "trace_id": str(trace_id)}
+        log("render_started", **context, attempt=attempt)
         try:
             if attempt > MAX_ATTEMPTS:
                 raise ValueError("Render interrupted too many times")
             path = render_png(job_id, width, height, iterations)
         except (OSError, ValueError) as exc:
             if isinstance(exc, OSError) and attempt < MAX_ATTEMPTS:
-                log("render_retry", job_id=str(job_id), attempt=attempt, error=str(exc))
+                log("render_retry", **context, attempt=attempt, error=str(exc))
                 return False
             db.execute(
                 """
@@ -100,7 +101,7 @@ def process_job(job_id):
                 """,
                 (str(exc), job_id),
             )
-            log("render_failed", job_id=str(job_id), error=str(exc))
+            log("render_failed", **context, component="postgres", error=str(exc))
         else:
             db.execute(
                 """
@@ -111,7 +112,7 @@ def process_job(job_id):
                 """,
                 (path, job_id),
             )
-            log("render_completed", job_id=str(job_id), output_path=path)
+            log("render_completed", **context, component="postgres", output_path=path)
 
         return True
 
@@ -120,6 +121,8 @@ def handle_message(queue, message_id, fields):
     job_id = UUID(fields["job_id"])
     if process_job(job_id):
         queue.xack(STREAM, GROUP, message_id)
+        log("job_acknowledged", job_id=str(job_id), trace_id=fields.get("trace_id", str(job_id)),
+            component="redis_stream", message_id=message_id)
 
 
 def main():

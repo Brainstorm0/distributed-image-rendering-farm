@@ -158,8 +158,11 @@ pending messages until a worker acknowledges them.
 A worker reclaims idle pending messages after 60 seconds and obtains a
 PostgreSQL advisory lock before rendering. The lock and terminal status
 check make duplicate deliveries safe. Workers retry transient file errors
-up to three render attempts. The gateway logs a request ID and returns it
-in `X-Request-ID`. Publisher and worker logs include the job ID.
+up to three render attempts. The gateway assigns an `X-Request-ID` to each
+HTTP call. The submission request ID becomes the job's `X-Trace-ID`. The
+Render API stores it with the job, the publisher carries it in Redis Streams,
+and workers include it in processing and acknowledgement logs. The Render API
+includes the same trace ID in database and cache events for status reads.
 
 The concurrent load test measures accepted and completed jobs per second,
 p50 and p95 latency, HTTP 429 responses, and cache hits. Run it with

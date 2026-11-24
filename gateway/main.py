@@ -46,17 +46,22 @@ app = FastAPI(lifespan=lifespan)
 @app.middleware("http")
 async def log_request(request: Request, call_next):
     request_id = str(uuid4())
+    request.state.request_id = request_id
     started = monotonic()
     status_code = 500
+    trace_id = request_id
     try:
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        trace_id = response.headers.get("X-Trace-ID", request_id)
+        response.headers["X-Trace-ID"] = trace_id
         status_code = response.status_code
         return response
     finally:
         logger.info(json.dumps({
             "event": "http_request",
             "request_id": request_id,
+            "trace_id": trace_id,
             "method": request.method,
             "path": request.url.path,
             "status": status_code,
@@ -80,14 +85,16 @@ def consume_token(client_ip: str) -> int:
 
 async def forward(request: Request, method: str, url: str, **kwargs) -> Response:
     try:
-        upstream = await request.app.state.http.request(method, url, **kwargs)
+        upstream = await request.app.state.http.request(
+            method, url, headers={"X-Request-ID": request.state.request_id}, **kwargs
+        )
     except httpx.TimeoutException as exc:
         raise HTTPException(504, "Upstream service timed out") from exc
     except httpx.RequestError as exc:
         raise HTTPException(502, "Upstream service is unavailable") from exc
 
     headers = {}
-    for name in ("Content-Type", "Content-Disposition", "X-Cache"):
+    for name in ("Content-Type", "Content-Disposition", "X-Cache", "X-Trace-ID"):
         if name in upstream.headers:
             headers[name] = upstream.headers[name]
 

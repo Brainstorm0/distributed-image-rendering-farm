@@ -113,3 +113,42 @@ for the project's pinned dependencies.
 
 See [architecture and data flows](docs/architecture.md) for the Phase 1 and
 current deployments.
+
+## Ten-minute live demo
+
+The [load test report](output/pdf/load-test-report.pdf) contains the measured results.
+Run the following from the repository root in PowerShell.
+
+| Time | Demonstrate |
+| --- | --- |
+| 0:00–1:30 | Run `docker compose up -d --build --scale worker=2 --wait`, show `docker compose ps -a`, and open `/health`. |
+| 1:30–3:00 | Submit and poll the job below. Explain validation and the token bucket in `gateway/main.py`. |
+| 3:00–5:00 | Filter the logs by trace ID. Walk through the API transaction, the outbox publisher, Redis Streams, the worker's database update, and the cache hit. |
+| 5:00–7:00 | Run the concurrent load test. Explain the 202 and 429 counts, throughput, and p95 status read latency. |
+| 7:00–8:30 | Stop the publisher, submit a job, show its queued status, then restart the publisher and show completion. |
+| 8:30–10:00 | Download the PNG, discuss the report's burst-test limits, and take questions. |
+
+```powershell
+$base = 'http://localhost:8080'
+$body = @{ width = 256; height = 256 } | ConvertTo-Json
+$submitted = Invoke-WebRequest -Method Post -Uri "$base/render" -ContentType 'application/json' -Body $body
+$trace = [string]$submitted.Headers['X-Trace-ID']
+$id = ($submitted.Content | ConvertFrom-Json).job_id
+for ($i = 0; $i -lt 30; $i++) {
+    $job = Invoke-RestMethod "$base/jobs/$id"
+    if ($job.status -in 'completed', 'failed') { break }
+    Start-Sleep -Seconds 1
+}
+if ($job.status -ne 'completed') { throw "Render status is $($job.status)" }
+$cached = Invoke-WebRequest "$base/jobs/$id"
+$cached.Headers['X-Cache']
+docker compose logs --no-color gateway render-api publisher worker | Select-String -SimpleMatch $trace
+curl.exe -f "$base/jobs/$id/image" -o render.png
+Start-Sleep -Seconds 5
+Get-Content -Raw scripts/load_test.py | docker compose exec -T gateway python -
+```
+
+The submission's `X-Trace-ID` follows the job through PostgreSQL, Redis
+Streams, the worker, and the status cache. Polls and downloads have their
+own `X-Request-ID` and return the same job trace ID. Jobs created before
+migration 003 use their job ID when no submission trace was stored.

@@ -12,22 +12,26 @@ def publish_one(db, queue):
     with db.transaction():
         row = db.execute(
             """
-            SELECT job_id
-            FROM render_outbox
-            ORDER BY created_at, job_id
+            SELECT outbox.job_id, COALESCE(jobs.trace_id, jobs.id)
+            FROM render_outbox AS outbox
+            JOIN render_jobs AS jobs ON jobs.id = outbox.job_id
+            ORDER BY outbox.created_at, outbox.job_id
             LIMIT 1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF outbox SKIP LOCKED
             """
         ).fetchone()
 
         if row is None:
             return None
 
-        job_id = str(row[0])
-        message_id = queue.xadd(STREAM, {"job_id": job_id})
+        job_id, trace_id = map(str, row)
+        message_id = queue.xadd(STREAM, {"job_id": job_id, "trace_id": trace_id})
         db.execute("DELETE FROM render_outbox WHERE job_id = %s", (job_id,))
 
-    return {"event": "job_published", "job_id": job_id, "message_id": message_id}
+    return {
+        "event": "job_published", "component": "redis_stream", "job_id": job_id,
+        "trace_id": trace_id, "message_id": message_id,
+    }
 
 
 def main():
