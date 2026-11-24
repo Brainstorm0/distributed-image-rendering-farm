@@ -1,0 +1,35 @@
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: #f3f4f5; color: #24292e; font: 1rem/1.5 system-ui, sans-serif; }
+header { background: #fff; border-bottom: 1px solid #d7dade; }
+h1 { max-width: 69rem; margin: 0 auto; padding: 1.1rem 1.25rem; font-size: 1.55rem; }
+main { max-width: 69rem; margin: 1.5rem auto; padding: 0 1.25rem; display: grid; grid-template-columns: 18rem minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+form, section { padding: 1.25rem; background: #fff; border: 1px solid #d7dade; border-radius: 5px; }
+h2 { margin: 0 0 1rem; font-size: 1.15rem; }
+label { display: block; margin-bottom: .25rem; font-weight: 600; }
+input, select, button { font: inherit; border-radius: 4px; }
+input, select { width: 100%; padding: .45rem .55rem; border: 1px solid #969da5; background: white; color: inherit; }
+select { appearance: none; background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23343a40' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right .55rem center; padding-right: 2rem; }
+.dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.dimensions, #iterations-field, #seed-field, button { margin-top: 1rem; }
+.field-note { margin: .3rem 0 0; font-size: .875rem; }
+button { padding: .5rem .85rem; border: 1px solid #174a78; background: #215d92; color: white; cursor: pointer; }
+button:disabled { opacity: .65; cursor: wait; }
+#status { margin: 0 0 1rem; }
+#status:last-child { margin-bottom: 0; }
+.error { color: #a22323; }
+dl { margin: 0 0 1rem; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem .75rem; }
+dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: .9rem; }
+#preview { display: block; max-width: 100%; max-height: 32rem; height: auto; object-fit: contain; }
+#download { display: inline-block; margin-top: .75rem; color: #174a78; }
+.image-pair { display: flex; gap: 1rem; align-items: start; }
+.image-pair figure { flex: 1; min-width: 0; margin: 0; }
+.image-pair img { display: block; max-width: 100%; height: auto; }
+#preview.zoomable { cursor: zoom-in; }
+#zoom-center { margin: 0 0 .75rem; }
+#batch-results { padding-left: 1.25rem; }
+#batch-results li { margin-bottom: 1rem; overflow-wrap: anywhere; }
+#batch-results img { display: block; max-width: 16rem; width: 100%; height: auto; margin-top: .5rem; }
+@media (max-width: 660px) {
+  main { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE render_jobs ADD COLUMN IF NOT EXISTS seed INTEGER CHECK (seed >= 0);

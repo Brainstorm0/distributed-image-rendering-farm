@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
 import psycopg
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="Render API")
@@ -24,10 +26,19 @@ cache = redis.Redis.from_url(
 )
 
 
+class Viewport(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    scale: float = Field(ge=1 / 1024, le=1)
+
+
 class RenderRequest(BaseModel):
     width: int = Field(strict=True, ge=1, le=2048)
     height: int = Field(strict=True, ge=1, le=2048)
     max_iterations: int = Field(default=100, strict=True, ge=1, le=1000)
+    style: Literal["mandelbrot", "seahorse", "skyline", "geometric"] = "mandelbrot"
+    viewport: Viewport | None = None
+    seed: int | None = Field(default=None, strict=True, ge=0, le=2_147_483_647)
 
 
 def request_id(request: Request) -> UUID:
@@ -66,10 +77,13 @@ def create_job(settings: RenderRequest, request: Request, response: Response):
         with psycopg.connect(connect_timeout=3) as db:
             db.execute(
                 """
-                INSERT INTO render_jobs (id, width, height, max_iterations, trace_id)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO render_jobs (id, width, height, max_iterations, trace_id, style, viewport, seed)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (job_id, settings.width, settings.height, settings.max_iterations, trace_id),
+                (job_id, settings.width, settings.height, settings.max_iterations,
+                 trace_id, settings.style,
+                 Jsonb(settings.viewport.model_dump()) if settings.viewport else None,
+                 settings.seed if settings.style == "skyline" else None),
             )
             db.execute(
                 "INSERT INTO render_outbox (job_id) VALUES (%s)",
@@ -86,7 +100,7 @@ def create_job(settings: RenderRequest, request: Request, response: Response):
 @app.get("/jobs/{job_id}")
 def get_job(job_id: UUID, request: Request):
     poll_id = request_id(request)
-    cache_key = f"renderfarm:status:v2:{job_id}"
+    cache_key = f"renderfarm:status:v5:{job_id}"
     cache_status = "BYPASS"
 
     if CACHE_ENABLED:
@@ -105,7 +119,7 @@ def get_job(job_id: UUID, request: Request):
         with psycopg.connect(connect_timeout=3, row_factory=dict_row) as db:
             job = db.execute(
                 """
-                SELECT id AS job_id, width, height, max_iterations, status,
+                SELECT id AS job_id, width, height, max_iterations, style, status, viewport, worker_name, seed,
                        attempts, created_at, started_at, finished_at,
                        COALESCE(trace_id, id) AS trace_id
                 FROM render_jobs

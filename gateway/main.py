@@ -3,12 +3,15 @@ import json
 import logging
 import math
 from contextlib import asynccontextmanager
+from pathlib import Path
 from time import monotonic
+from typing import Literal
 from uuid import UUID, uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 NODES = {
@@ -27,10 +30,19 @@ REFILL_PER_SECOND = 1.0
 buckets: dict[str, tuple[float, float]] = {}
 
 
+class Viewport(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    scale: float = Field(ge=1 / 1024, le=1)
+
+
 class RenderRequest(BaseModel):
     width: int = Field(strict=True, ge=1, le=2048)
     height: int = Field(strict=True, ge=1, le=2048)
     max_iterations: int = Field(default=100, strict=True, ge=1, le=1000)
+    style: Literal["mandelbrot", "seahorse", "skyline", "geometric"] = "mandelbrot"
+    viewport: Viewport | None = None
+    seed: int | None = Field(default=None, strict=True, ge=0, le=2_147_483_647)
 
 
 @asynccontextmanager
@@ -41,6 +53,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+WEB_DIR = Path(__file__).resolve().parent / "web"
+app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(WEB_DIR / "index.html", media_type="text/html")
 
 
 @app.middleware("http")

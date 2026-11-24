@@ -42,6 +42,38 @@ Completed status responses are cached for five minutes. A repeated status
 request shows `X-Cache: HIT`. The gateway reports the Render API and both Phase 1
 mock nodes at `/health`. The mock routes are `/nodes/a/info` and `/nodes/b/info`.
 
+## Browser frontend
+
+After starting Docker Compose, open [Image Rendering Farm](http://localhost:8080/).
+Choose a style and dimensions, then select **Render image**. The result panel
+shows the job and trace IDs, live status, and a PNG preview and download.
+
+Click a completed fractal to render a 2× zoom around that point. The result
+panel keeps the previous view alongside the new PNG. **Zoom at center** gives
+the same action using the keyboard.
+
+For skyline renders, enter a seed to select a reproducible layout. The same
+seed and dimensions produce the same PNG. **Compare skyline seeds** submits
+three jobs with seeds 42, 99, and 42 so you can compare the outputs and worker
+IDs. API clients can send a `seed` integer from 0 to 2147483647 with
+`"style":"skyline"`. Omitting it uses the original skyline.
+
+## Art styles
+
+To generate a different image, include `style` in the JSON body when you submit
+a job. These examples work with the `$base` variable from the submission example.
+Poll and download each job using its own ID.
+
+```powershell
+$skyline = Invoke-RestMethod -Method Post -Uri "$base/render" -ContentType 'application/json' -Body '{"width":640,"height":360,"style":"skyline"}'
+$seahorse = Invoke-RestMethod -Method Post -Uri "$base/render" -ContentType 'application/json' -Body '{"width":512,"height":512,"max_iterations":220,"style":"seahorse"}'
+```
+
+The default `mandelbrot` style renders the original blue fractal. `seahorse`
+renders a purple close-up of its boundary. `skyline` draws a city at sunset
+using geometric shapes and uses only the requested width and height.
+`geometric` draws a rosette from rotating polygons.
+
 ## Load test and recovery demo
 
 Run the dependency-free load test with Python 3, or use the gateway container's

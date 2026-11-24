@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Image Rendering Farm</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/render.js" defer></script>
+</head>
+<body>
+  <header><h1>Image Rendering Farm</h1></header>
+  <main>
+    <form id="render-form">
+      <h2>Render settings</h2>
+      <label for="style">Art style</label>
+      <select id="style" name="style">
+        <option value="skyline">Sunset skyline</option>
+        <option value="mandelbrot">Mandelbrot</option>
+        <option value="seahorse">Seahorse Valley</option>
+        <option value="geometric">Geometric rosette</option>
+      </select>
+      <div class="dimensions">
+        <div>
+          <label for="width">Width (px)</label>
+          <input id="width" name="width" type="number" min="1" max="2048" value="640" required>
+        </div>
+        <div>
+          <label for="height">Height (px)</label>
+          <input id="height" name="height" type="number" min="1" max="2048" value="360" required>
+        </div>
+      </div>
+      <div id="iterations-field" hidden>
+        <label for="iterations">Max iterations</label>
+        <input id="iterations" name="max_iterations" type="number" min="1" max="1000" value="220" required disabled>
+      </div>
+      <div id="seed-field">
+        <label for="seed">Skyline seed</label>
+        <input id="seed" name="seed" type="number" min="0" max="2147483647" step="1" value="42" required>
+        <p class="field-note">Use the same seed and dimensions to recreate a skyline.</p>
+      </div>
+      <button type="submit">Render image</button>
+      <button id="seed-batch-button" type="button">Compare skyline seeds</button>
+    </form>
+    <section aria-labelledby="result-heading">
+      <h2 id="result-heading">Result</h2>
+      <p id="status" role="status">Choose an art style and render an image.</p>
+      <dl id="job-details" hidden>
+        <dt>Job ID</dt><dd id="job-id"></dd>
+        <dt>Trace ID</dt><dd id="trace-id"></dd>
+      </dl>
+      <p id="zoom-help" hidden>Click the fractal to render a 2× zoom around that point.</p>
+      <button id="zoom-center" type="button" hidden>Zoom at center</button>
+      <div class="image-pair">
+        <figure id="previous-figure" hidden>
+          <figcaption>Previous view</figcaption>
+          <img id="previous" alt="Fractal before zooming">
+        </figure>
+        <figure>
+          <img id="preview" alt="" hidden>
+        </figure>
+      </div>
+      <a id="download" download hidden>Download PNG</a>
+      <ul id="batch-results" hidden></ul>
+    </section>
+  </main>
+</body>
+</html>
