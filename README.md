@@ -75,13 +75,14 @@ After starting Docker Compose, open [Image Rendering Farm](http://localhost:8080
 Choose a style and dimensions, then select **Render image**. The result panel
 shows the job and trace IDs, live status, and a PNG preview and download.
 
-Click a completed fractal to render a 2× zoom around that point. The result
+Click a completed Mandelbrot, Seahorse Valley, or Geometric rosette image to
+render a 2× zoom around that point. The result
 panel keeps the previous view alongside the new PNG. **Zoom at center** gives
 the same action using the keyboard.
 
-For skyline renders, enter a seed to select a reproducible layout. The same
-seed and dimensions produce the same PNG. **Compare skyline seeds** submits
-three jobs with seeds 42, 99, and 42 so you can compare the outputs and worker
+For skyline renders, choose seed 42 or 99 to select a reproducible layout. The
+same seed and dimensions produce the same PNG. **Compare skyline seeds** submits
+one job per seed so you can compare the two outputs and worker
 IDs. API clients can send a `seed` integer from 0 to 2147483647 with
 `"style":"skyline"`. Omitting it uses the original skyline.
 
@@ -94,7 +95,8 @@ IDs. API clients can send a `seed` integer from 0 to 2147483647 with
 | Seahorse Valley | `seahorse` | A purple close-up of the Mandelbrot boundary. |
 | Geometric rosette | `geometric` | A pattern made from rotating polygons. |
 
-The fractal styles accept `max_iterations` and an optional `viewport` object.
+The fractal styles accept `max_iterations`. The fractal and geometric styles
+accept an optional `viewport` object.
 The viewport uses normalized `x` and `y` coordinates from 0 to 1 and a
 `scale` from 1/1024 to 1. For example, `{"x":0.62,"y":0.39,"scale":0.5}`
 requests a 2× zoom centered near that point of the style's original view.
@@ -189,7 +191,7 @@ Run the following from the repository root in PowerShell.
 | Time | Demonstrate |
 | --- | --- |
 | 0:00–1:30 | Start the stack with the local run command, show `docker compose ps -a`, and open `/health`. |
-| 1:30–3:00 | Open the browser frontend and select **Compare skyline seeds**. Show the two matching seed 42 images, the different seed 99 image, and the worker IDs. |
+| 1:30–3:00 | Open the browser frontend and select **Compare skyline seeds**. Show the two skyline layouts and their worker IDs. |
 | 3:00–5:00 | Filter the logs by trace ID. Walk through the API transaction, the outbox publisher, Redis Streams, the worker's database update, and the cache hit. |
 | 5:00–7:00 | Run the concurrent load test. Explain the 202 and 429 counts, throughput, and p95 status read latency. |
 | 7:00–8:30 | Stop the publisher, submit a job, show its queued status, then restart the publisher and show completion. |

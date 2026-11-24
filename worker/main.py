@@ -61,8 +61,10 @@ def draw_skyline(width, height, seed=None):
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 
-def draw_geometric(width, height):
-    image = Image.new("RGB", (640, 640), "#102e36")
+def draw_geometric(width, height, viewport=None):
+    base_size = 640
+    background = "#102e36"
+    image = Image.new("RGB", (base_size, base_size), background)
     draw = ImageDraw.Draw(image)
     colors = ("#f5c26b", "#e37455", "#64c4ae", "#faf0d2")
     for radius in range(288, 8, -16):
@@ -71,6 +73,15 @@ def draw_geometric(width, height):
             angle = vertex * math.tau / 8 + radius / 95
             points.append((320 + radius * math.cos(angle), 320 + radius * math.sin(angle)))
         draw.polygon(points, outline=colors[(radius // 16) % len(colors)], width=4)
+    if viewport:
+        center_x = viewport["x"] * base_size
+        center_y = viewport["y"] * base_size
+        half = viewport["scale"] * base_size / 2
+        return image.transform(
+            (width, height), Image.Transform.EXTENT,
+            (center_x - half, center_y - half, center_x + half, center_y + half),
+            resample=Image.Resampling.BICUBIC, fillcolor=background,
+        )
     return image.resize((width, height), Image.Resampling.LANCZOS)
 
 
@@ -108,7 +119,7 @@ def render_png(job_id, width, height, iterations, style="mandelbrot", viewport=N
         if style == "skyline":
             image = draw_skyline(width, height, seed)
         elif style == "geometric":
-            image = draw_geometric(width, height)
+            image = draw_geometric(width, height, viewport)
         else:
             image = draw_fractal(width, height, iterations, style, viewport)
         image.save(temporary, format="PNG")

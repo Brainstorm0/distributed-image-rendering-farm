@@ -83,7 +83,7 @@ function addActivity(text) {
 }
 
 function updateZoomControls() {
-  const canZoom = !!currentImage && fractalStyles.has(currentImage.settings.style)
+  const canZoom = !!currentImage && currentImage.settings.style !== "skyline"
     && (currentImage.settings.viewport?.scale ?? 1) > 1 / 1024;
   preview.classList.toggle("zoomable", canZoom);
   zoomHelp.hidden = zoomCenter.hidden = !canZoom;
@@ -212,10 +212,10 @@ async function renderBatchItem(settings, label) {
   }
 }
 
-async function renderBatch(makeEntries) {
+seedBatchButton.addEventListener("click", async () => {
   if (!form.reportValidity()) return;
   const { width, height } = readSettings();
-  const entries = makeEntries({ width, height });
+  const seeds = [42, 99];
   setBusy(true);
   currentImage = undefined;
   updateZoomControls();
@@ -226,13 +226,11 @@ async function renderBatch(makeEntries) {
   statusLine.classList.remove("error");
   statusLine.textContent = "Rendering batch…";
   try {
-    const results = await Promise.all(entries.map(([settings, label]) => renderBatchItem(settings, label)));
-    statusLine.textContent = `${results.filter(Boolean).length} of ${entries.length} images completed.`;
+    const results = await Promise.all(seeds.map((seed) =>
+      renderBatchItem({ width, height, style: "skyline", seed }, `Skyline seed ${seed}`)
+    ));
+    statusLine.textContent = `${results.filter(Boolean).length} of ${seeds.length} images completed.`;
   } finally {
     setBusy(false);
   }
-}
-
-seedBatchButton.addEventListener("click", () => renderBatch((size) =>
-  [42, 99, 42].map((value) => [{ ...size, style: "skyline", seed: value }, `Skyline seed ${value}`])
-));
+});

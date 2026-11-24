@@ -36,7 +36,10 @@
       </div>
       <div id="seed-field">
         <label for="seed">Skyline seed</label>
-        <input id="seed" name="seed" type="number" min="0" max="2147483647" step="1" value="42" required>
+        <select id="seed" name="seed">
+          <option value="42">Seed 42</option>
+          <option value="99">Seed 99</option>
+        </select>
         <p class="field-note">Use the same seed and dimensions to recreate a skyline.</p>
       </div>
       <button type="submit">Render image</button>
@@ -49,12 +52,12 @@
         <dt>Job ID</dt><dd id="job-id"></dd>
         <dt>Trace ID</dt><dd id="trace-id"></dd>
       </dl>
-      <p id="zoom-help" hidden>Click the fractal to render a 2× zoom around that point.</p>
+      <p id="zoom-help" hidden>Click the image to render a 2× zoom around that point.</p>
       <button id="zoom-center" type="button" hidden>Zoom at center</button>
       <div class="image-pair">
         <figure id="previous-figure" hidden>
           <figcaption>Previous view</figcaption>
-          <img id="previous" alt="Fractal before zooming">
+          <img id="previous" alt="Image before zooming">
         </figure>
         <figure>
           <img id="preview" alt="" hidden>
