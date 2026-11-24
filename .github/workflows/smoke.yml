@@ -1,0 +1,48 @@
+name: Compose smoke test
+
+on:
+  push:
+    branches: [main, phase-2-persistence-workers]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build and start the stack
+        run: docker compose up -d --build --scale worker=2 --wait --wait-timeout 90
+      - name: Check gateway and frontend
+        run: |
+          curl --fail --silent --show-error --max-time 5 --retry 10 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/health
+          curl --fail --silent --show-error http://127.0.0.1:8080/ > frontend.html
+          grep -Fq 'Compare skyline seeds' frontend.html
+          curl --fail --silent --show-error http://127.0.0.1:8080/assets/load-test.js > /dev/null
+      - name: Submit a burst and verify completed PNGs
+        shell: bash
+        run: |
+          docker compose exec -T gateway python - < scripts/load_test.py | tee smoke-results.json
+          python3 - <<'PY'
+          import json
+
+          with open("smoke-results.json") as results:
+              smoke = json.load(results)
+          accepted = smoke["submission_codes"].get("202", 0)
+          assert accepted > 0
+          assert smoke["submission_codes"].get("429", 0) > 0
+          assert smoke["completed"] == accepted
+          assert smoke["status_cache"] == {"HIT": accepted * 5}
+          PY
+      - name: Print service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
