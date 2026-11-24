@@ -2,14 +2,12 @@
 
 ## Project objective
 
-The Distributed Image Rendering Farm accepts requests to generate PNG images.
-Its first rendering workload will be a Mandelbrot fractal. A client will submit
-image settings, receive a job ID, and check the job's progress while a worker
-renders the image in the background.
+The Distributed Image Rendering Farm accepts requests to generate Mandelbrot
+PNG images. A client submits image settings, receives a job ID, and checks the
+job's progress while a worker renders the image in the background.
 
 Phase 1 establishes the API Gateway, routing, rate limiting, and health
-reporting using two mock services. Figure 3 shows the planned architecture for
-the full assignment.
+reporting using two mock services. Figure 3 shows the current rendering farm.
 
 ## Figure 1 — Phase 1 deployment architecture
 
@@ -101,7 +99,7 @@ Example response with HTTP `202 Accepted`:
 }
 ```
 
-## Figure 3 — Planned full rendering farm architecture
+## Figure 3 — Rendering farm architecture
 
 ```mermaid
 flowchart LR
@@ -109,16 +107,18 @@ flowchart LR
     Gateway["API Gateway"]
     API["Render API"]
     DB[("PostgreSQL<br/>Job records and status")]
-    Redis[("Redis<br/>Rate limits, status cache,<br/>Redis Streams")]
+    Redis[("Redis<br/>Status cache and Redis Streams")]
+    Publisher["Outbox publisher"]
     W1["Render worker 1"]
     W2["Render worker 2"]
     Volume[("Shared Docker volume<br/>Rendered PNGs")]
 
     Client -->|"Submit, poll, or download"| Gateway
-    Gateway -->|"Check rate limits"| Redis
     Gateway -->|"Route requests"| API
-    API -->|"Create jobs and read job status"| DB
-    API -->|"Publish jobs and look up cached status"| Redis
+    API -->|"Create jobs and outbox entries, read job status"| DB
+    API -->|"Cache completed job status"| Redis
+    Publisher -->|"Read and clear outbox entries"| DB
+    Publisher -->|"Publish job IDs"| Redis
     Redis -->|"Deliver queued jobs"| W1
     Redis -->|"Deliver queued jobs"| W2
     W1 -->|"Update job status"| DB
@@ -133,9 +133,10 @@ flowchart LR
 1. The client sends `POST /render` with the image settings. The Gateway
    checks the rate limit, validates the request, and forwards it to the
    Render API.
-2. The Render API saves the job in PostgreSQL, publishes its job ID to a
-   Redis Stream, and returns `202 Accepted` with the job ID. The client
-   can use the ID while rendering continues in the background.
+2. The Render API saves the job and outbox entry in one PostgreSQL
+   transaction and returns `202 Accepted` with the job ID. A separate
+   publisher sends the job ID to a Redis Stream and deletes the outbox
+   entry after Redis accepts the message.
 3. An available worker reads the job from Redis Streams, loads its
    settings, and records that it has started in PostgreSQL.
 4. The worker renders the PNG, writes it to the shared volume, records
@@ -149,14 +150,17 @@ flowchart LR
    `GET /jobs/{job_id}/image`. The Render API reads it from the shared
    volume.
 
-## Resilience and observability plan
+## Resilience and observability
 
-The final phase will add bounded retries with exponential backoff for
-transient downstream failures. Structured logs will include a request ID
-for HTTP requests and a job ID for queued work so events can be traced
-across the Gateway, cache, queue, worker, and database operations.
+The publisher retries database and Redis failures with backoff. Redis
+uses an append-only log with fsync on each write. Consumer groups retain
+pending messages until a worker acknowledges them.
+A worker reclaims idle pending messages after 60 seconds and obtains a
+PostgreSQL advisory lock before rendering. The lock and terminal status
+check make duplicate deliveries safe. Workers retry transient file errors
+up to three render attempts. The gateway logs a request ID and returns it
+in `X-Request-ID`. Publisher and worker logs include the job ID.
 
-A concurrent load test will measure accepted jobs per second, completed
-renders per second, p50 and p95 latency, HTTP 429 responses, and cache
-hits. Repeated status lookups with caching enabled and disabled will
-show the difference in database reads.
+The concurrent load test measures accepted and completed jobs per second,
+p50 and p95 latency, HTTP 429 responses, and cache hits. Run it with
+caching enabled and disabled to compare repeated status reads.

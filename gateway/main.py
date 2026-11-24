@@ -1,7 +1,10 @@
 import asyncio
+import json
+import logging
 import math
 from contextlib import asynccontextmanager
 from time import monotonic
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -12,6 +15,12 @@ NODES = {
     "a": "http://mock-a:8000",
     "b": "http://mock-b:8000",
 }
+RENDER_API = "http://render-api:8000"
+HEALTH_TARGETS = {
+    **{f"mock-{key}": url for key, url in NODES.items()},
+    "render-api": RENDER_API,
+}
+logger = logging.getLogger("uvicorn.error")
 
 BUCKET_CAPACITY = 5
 REFILL_PER_SECOND = 1.0
@@ -19,18 +28,40 @@ buckets: dict[str, tuple[float, float]] = {}
 
 
 class RenderRequest(BaseModel):
-    width: int = Field(strict=True, ge=1)
-    height: int = Field(strict=True, ge=1)
+    width: int = Field(strict=True, ge=1, le=2048)
+    height: int = Field(strict=True, ge=1, le=2048)
+    max_iterations: int = Field(default=100, strict=True, ge=1, le=1000)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with httpx.AsyncClient(timeout=2.0) as client:
+    async with httpx.AsyncClient(timeout=5.0) as client:
         app.state.http = client
         yield
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    request_id = str(uuid4())
+    started = monotonic()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        status_code = response.status_code
+        return response
+    finally:
+        logger.info(json.dumps({
+            "event": "http_request",
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": status_code,
+            "duration_ms": round((monotonic() - started) * 1000, 2),
+        }))
 
 
 def consume_token(client_ip: str) -> int:
@@ -51,20 +82,25 @@ async def forward(request: Request, method: str, url: str, **kwargs) -> Response
     try:
         upstream = await request.app.state.http.request(method, url, **kwargs)
     except httpx.TimeoutException as exc:
-        raise HTTPException(504, "Mock service timed out") from exc
+        raise HTTPException(504, "Upstream service timed out") from exc
     except httpx.RequestError as exc:
-        raise HTTPException(502, "Mock service is unavailable") from exc
+        raise HTTPException(502, "Upstream service is unavailable") from exc
+
+    headers = {}
+    for name in ("Content-Type", "Content-Disposition", "X-Cache"):
+        if name in upstream.headers:
+            headers[name] = upstream.headers[name]
 
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
-        media_type=upstream.headers.get("content-type"),
+        headers=headers,
     )
 
 
 async def probe(client: httpx.AsyncClient, url: str) -> str:
     try:
-        response = await client.get(f"{url}/health")
+        response = await client.get(f"{url}/health", timeout=3.0)
         response.raise_for_status()
         if response.json().get("status") == "healthy":
             return "healthy"
@@ -76,9 +112,9 @@ async def probe(client: httpx.AsyncClient, url: str) -> str:
 @app.get("/health")
 async def health(request: Request):
     results = await asyncio.gather(
-        *(probe(request.app.state.http, url) for url in NODES.values())
+        *(probe(request.app.state.http, url) for url in HEALTH_TARGETS.values())
     )
-    nodes = {f"mock-{key}": status for key, status in zip(NODES, results)}
+    nodes = dict(zip(HEALTH_TARGETS, results))
     healthy = all(status == "healthy" for status in results)
     return JSONResponse(
         status_code=200 if healthy else 503,
@@ -111,11 +147,21 @@ async def render(request: Request):
     try:
         settings = RenderRequest.model_validate_json(await request.body())
     except ValidationError as exc:
-        raise HTTPException(422, "Width and height must be positive integers") from exc
+        raise HTTPException(422, "Invalid render settings") from exc
 
     return await forward(
         request,
         "POST",
-        f"{NODES['a']}/render",
+        f"{RENDER_API}/render",
         json=settings.model_dump(),
     )
+
+
+@app.get("/jobs/{job_id}")
+async def job_status(job_id: UUID, request: Request):
+    return await forward(request, "GET", f"{RENDER_API}/jobs/{job_id}")
+
+
+@app.get("/jobs/{job_id}/image")
+async def job_image(job_id: UUID, request: Request):
+    return await forward(request, "GET", f"{RENDER_API}/jobs/{job_id}/image")

@@ -6,6 +6,7 @@ services:
     depends_on:
       - mock-a
       - mock-b
+      - render-api
 
   mock-a:
     build: ./mock_service
@@ -25,16 +26,35 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "renderfarm", "-d", "renderfarm"]
       interval: 3s
       timeout: 3s
       retries: 15
 
+  migrate:
+    image: postgres:16
+    environment: &postgres-client
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: renderfarm
+      PGUSER: renderfarm
+      PGPASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+    volumes:
+      - ./db/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for migration in /migrations/*.sql; do
+          psql -v ON_ERROR_STOP=1 -f "$$migration"
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -46,47 +66,41 @@ services:
   render-api:
     build: ./render_api
     environment:
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGDATABASE: renderfarm
-      PGUSER: renderfarm
-      PGPASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+      <<: *postgres-client
+      REDIS_URL: redis://redis:6379/0
+      STATUS_CACHE_ENABLED: "${STATUS_CACHE_ENABLED:-1}"
     depends_on:
-      postgres:
+      migrate:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
+    volumes:
+      - render_output:/renders:ro
 
   publisher:
     build: ./publisher
     environment:
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGDATABASE: renderfarm
-      PGUSER: renderfarm
-      PGPASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+      <<: *postgres-client
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
   worker:
     build: ./worker
     environment:
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGDATABASE: renderfarm
-      PGUSER: renderfarm
-      PGPASSWORD: "${POSTGRES_PASSWORD:-renderfarm_dev}"
+      <<: *postgres-client
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     volumes:
       - render_output:/renders
-        
+
 volumes:
   postgres_data:
   redis_data:

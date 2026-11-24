@@ -1,52 +1,84 @@
 # Distributed Image Rendering Farm
 
-A Distributed Systems assignment implementing an API Gateway and a pool of
-workers that generate PNG images asynchronously. Clients will submit an
-image request, receive a job ID, and use that ID to check progress and
-download the completed image.
+A distributed systems assignment that generates Mandelbrot PNGs asynchronously.
+The FastAPI gateway accepts requests and rate-limits submissions. The Render API
+stores jobs and outbox entries in PostgreSQL. A publisher sends the job IDs to a
+Redis Stream, and workers render images into a shared Docker volume.
 
-See the [architecture diagrams and data flows](docs/architecture.md) for
-the Phase 1 mock deployment and planned rendering farm.
+## Run locally
 
-## Assignment milestones
+Start Docker Desktop on Windows, then run this from the repository root.
 
-| Phase | Deliverables |
-| --- | --- |
-| 1. Architecture, Docker, and Gateway | Architecture and data flow diagrams, Docker Compose, two mock nodes, gateway routing, token-bucket rate limiting with HTTP `429`, and per-node health reporting. |
-| 2. Persistence, caching, and workers | PostgreSQL schema and migrations, Redis caching and queueing, asynchronous render workers, and an updated Compose stack. |
-| 3. Resilience, load testing, and demo | Fault recovery, structured logs, a concurrent load-test script, a 2–3 page report or slide deck with measured results, and a 10-minute live demo and code walkthrough. |
-
-## Phase 1 setup
-
-The commands below describe how to run and verify Phase 1 once the Gateway,
-mock service, and `docker-compose.yml` have been implemented.
-
-Prerequisites are Git and Docker with Docker Compose. On Windows, start
-Docker Desktop before running the project. From the repository root, run:
-
-```cmd
-docker compose up --build
-```
-
-In a second Command Prompt window, check health and routing:
-
-```cmd
+```powershell
+docker compose up -d --build --scale worker=2 --wait
+docker compose ps -a
 curl.exe -i http://localhost:8080/health
-curl.exe -i http://localhost:8080/nodes/a/info
-curl.exe -i http://localhost:8080/nodes/b/info
 ```
 
-Submit a sample render request:
+The `migrate` service exits with code 0 after applying the idempotent SQL files
+in `db/migrations`. The Render API, publisher, and workers start after
+migrations succeed. Compose retains the PostgreSQL, Redis, and image volumes.
 
-```cmd
-curl.exe -i -H "Content-Type: application/json" -d "{\"width\":256,\"height\":256}" http://localhost:8080/render
+## Submit, poll, and download
+
+```powershell
+$base = 'http://localhost:8080'
+$settings = @{ width = 256; height = 256; max_iterations = 100 } | ConvertTo-Json
+$job = Invoke-RestMethod -Method Post -Uri "$base/render" -ContentType 'application/json' -Body $settings
+$job
+
+Invoke-RestMethod "$base/jobs/$($job.job_id)"
+# Repeat the status request until it reports completed, then download the image.
+curl.exe -f "$base/jobs/$($job.job_id)/image" -o render.png
+curl.exe -i "$base/jobs/$($job.job_id)"
 ```
 
-With a token available, the request should return HTTP `202` and a
-placeholder job ID. A burst that drains the token bucket should produce
-HTTP `429` with a `Retry-After` header.
+`POST /render` returns HTTP 202. Dimensions range from 1 through 2048, and
+`max_iterations` ranges from 1 through 1000 with a default of 100. The per-client
+token bucket holds five tokens and refills at one token per second. Rate-limited
+submissions receive HTTP 429 with `Retry-After`.
 
-To verify per-node health reporting, run `docker compose stop mock-b`
-from the repository root and check `/health` again. The response should
-report `mock-a` as healthy and `mock-b` as unavailable. Restore the node
-with `docker compose start mock-b`.
+Completed status responses are cached for five minutes. A repeated status
+request shows `X-Cache: HIT`. The gateway reports the Render API and both Phase 1
+mock nodes at `/health`. The mock routes are `/nodes/a/info` and `/nodes/b/info`.
+
+## Load test and recovery demo
+
+Run the dependency-free load test with Python 3, or use the gateway container's
+Python as shown here. The script reports HTTP response counts, submission
+latency, completed jobs per second, status read latency, and cache outcomes.
+It also checks the PNG signature of each completed render.
+
+```powershell
+Get-Content -Raw scripts/load_test.py | docker compose exec -T gateway python -
+```
+
+To compare repeated status reads with caching disabled, recreate the Render API
+with the setting below. Allow the submission bucket to refill between runs.
+
+```powershell
+$env:STATUS_CACHE_ENABLED = '0'
+docker compose up -d --wait render-api
+Get-Content -Raw scripts/load_test.py | docker compose exec -T gateway python -
+Remove-Item Env:STATUS_CACHE_ENABLED
+docker compose up -d --wait render-api
+```
+
+For an outbox recovery demo, stop `publisher`, submit a job, and confirm that
+its status is `queued`. Start `publisher` and poll the same job until it
+completes. Inspect the correlated job IDs in the publisher and worker logs.
+
+```powershell
+docker compose stop publisher
+# Submit a job using the example above and check its status.
+docker compose start publisher
+docker compose logs --tail 50 gateway publisher worker
+```
+
+Workers reclaim unacknowledged messages after 60 seconds. PostgreSQL advisory
+locks serialize duplicate deliveries for the same job, and workers acknowledge
+messages after writing the terminal job status. `docker compose down` stops
+the stack while retaining the volumes.
+
+See [architecture and data flows](docs/architecture.md) for the Phase 1 and
+current deployments.

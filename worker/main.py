@@ -13,6 +13,7 @@ STREAM = "renderfarm:jobs"
 GROUP = "render-workers"
 CONSUMER = socket.gethostname()
 OUTPUT_DIR = Path("/renders")
+MAX_ATTEMPTS = 3
 
 
 def log(event, **fields):
@@ -63,7 +64,7 @@ def process_job(job_id):
                 attempts = attempts + 1,
                 started_at = CURRENT_TIMESTAMP
             WHERE id = %s AND status IN ('queued', 'processing')
-            RETURNING width, height, max_iterations
+            RETURNING width, height, max_iterations, attempts
             """,
             (job_id,),
         ).fetchone()
@@ -71,10 +72,16 @@ def process_job(job_id):
             # The job is already finished or has been deleted.
             return True
 
-        log("render_started", job_id=str(job_id))
+        width, height, iterations, attempt = job
+        log("render_started", job_id=str(job_id), attempt=attempt)
         try:
-            path = render_png(job_id, *job)
+            if attempt > MAX_ATTEMPTS:
+                raise ValueError("Render interrupted too many times")
+            path = render_png(job_id, width, height, iterations)
         except (OSError, ValueError) as exc:
+            if isinstance(exc, OSError) and attempt < MAX_ATTEMPTS:
+                log("render_retry", job_id=str(job_id), attempt=attempt, error=str(exc))
+                return False
             db.execute(
                 """
                 UPDATE render_jobs
