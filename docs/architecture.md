@@ -103,7 +103,7 @@ Example response with HTTP `202 Accepted`:
 
 ```mermaid
 flowchart LR
-    Client["Client"]
+    Client["Browser UI or API client"]
     Gateway["API Gateway"]
     API["Render API"]
     DB[("PostgreSQL<br/>Job records and status")]
@@ -113,7 +113,7 @@ flowchart LR
     W2["Render worker 2"]
     Volume[("Shared Docker volume<br/>Rendered PNGs")]
 
-    Client -->|"Submit, poll, or download"| Gateway
+    Client -->|"Load UI, submit, poll, or download"| Gateway
     Gateway -->|"Route requests"| API
     API -->|"Create jobs and outbox entries, read job status"| DB
     API -->|"Cache completed job status"| Redis
@@ -130,7 +130,8 @@ flowchart LR
 
 ### Full render job data flow
 
-1. The client sends `POST /render` with the image settings. The Gateway
+1. The browser UI or another client sends `POST /render` with the image
+   dimensions and optional art style, fractal viewport, or skyline seed. The Gateway
    checks the rate limit, validates the request, and forwards it to the
    Render API.
 2. The Render API saves the job and outbox entry in one PostgreSQL
@@ -167,3 +168,5 @@ includes the same trace ID in database and cache events for status reads.
 The concurrent load test measures accepted and completed jobs per second,
 p50 and p95 latency, HTTP 429 responses, and cache hits. Run it with
 caching enabled and disabled to compare repeated status reads.
+The browser can run its own 20-request burst and show the results alongside
+the job activity panel.

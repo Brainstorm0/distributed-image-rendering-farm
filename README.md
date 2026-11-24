@@ -12,10 +12,13 @@ statuses. See the [architecture and data flows](docs/architecture.md).
 
 ## Run locally
 
-Start Docker Desktop on Windows, then run these commands in PowerShell from the
-repository root. Use `--build` on a fresh checkout or after changing the source.
+Install Git and Docker with Docker Compose. Start Docker Desktop on Windows,
+then clone the repository and run the stack from the project folder. Use
+`--build` on a fresh checkout or after changing the source.
 
 ```powershell
+git clone https://github.com/Brainstorm0/distributed-image-rendering-farm.git
+cd distributed-image-rendering-farm
 docker compose up -d --build --scale worker=2 --wait
 docker compose ps -a
 curl.exe -i http://localhost:8080/health
@@ -33,6 +36,10 @@ The `migrate` service exits with code 0 after applying the idempotent SQL files
 in `db/migrations`. The Render API, publisher, and workers start after
 migrations succeed. Compose retains the PostgreSQL, Redis, and image volumes.
 Run `docker compose down` from the repository root when you finish.
+
+On macOS or Linux, use the same Git and Compose commands. Open
+[the frontend](http://localhost:8080/) in your browser, and use
+`curl -i http://localhost:8080/health` to check the gateway.
 
 ## Submit, poll, and download
 
@@ -166,6 +173,10 @@ individual node statuses, and that restarting it restored health.
 Docker's package downloads timed out during the clean build attempt. The
 application checks used a cached Python image and checksum-verified wheels
 for the project's pinned dependencies.
+
+The [Compose smoke test](.github/workflows/smoke.yml) builds the stack on
+GitHub Actions, checks the gateway and frontend, then runs the API load test
+against two workers and verifies the resulting PNGs.
 
 See [architecture and data flows](docs/architecture.md) for the Phase 1 and
 current deployments.

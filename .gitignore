@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+/.venv/
+/.env
+/render.png
+/render-*.png
+/skyline.png
