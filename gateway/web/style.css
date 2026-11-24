@@ -30,6 +30,12 @@ dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, monospace; f
 #batch-results { padding-left: 1.25rem; }
 #batch-results li { margin-bottom: 1rem; overflow-wrap: anywhere; }
 #batch-results img { display: block; max-width: 16rem; width: 100%; height: auto; margin-top: .5rem; }
+#activity { margin-top: 1rem; }
+#activity summary { cursor: pointer; font-weight: 600; }
+#activity-events { padding-left: 1.5rem; overflow-wrap: anywhere; }
+.load-test { grid-column: 1 / -1; }
+.load-test p { margin: .5rem 0; }
+.load-test button { margin: .25rem 0; }
 @media (max-width: 660px) {
   main { grid-template-columns: 1fr; }
 }

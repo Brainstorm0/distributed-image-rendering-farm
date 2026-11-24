@@ -6,6 +6,7 @@
   <title>Image Rendering Farm</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/render.js" defer></script>
+  <script src="/assets/load-test.js" defer></script>
 </head>
 <body>
   <header><h1>Image Rendering Farm</h1></header>
@@ -61,6 +62,17 @@
       </div>
       <a id="download" download hidden>Download PNG</a>
       <ul id="batch-results" hidden></ul>
+      <details id="activity" hidden>
+        <summary>Job activity</summary>
+        <ol id="activity-events"></ol>
+      </details>
+    </section>
+    <section class="load-test" aria-labelledby="load-heading">
+      <h2 id="load-heading">Load test</h2>
+      <p>Send 20 render requests with up to 10 at a time to see how the gateway handles a burst.</p>
+      <button id="load-button" type="button">Run load test</button>
+      <p id="load-status" role="status"></p>
+      <dl id="load-results" hidden></dl>
     </section>
   </main>
 </body>

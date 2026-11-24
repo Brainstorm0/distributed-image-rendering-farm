@@ -13,6 +13,9 @@ const previousFigure = document.querySelector("#previous-figure");
 const download = document.querySelector("#download");
 const zoomHelp = document.querySelector("#zoom-help");
 const zoomCenter = document.querySelector("#zoom-center");
+const activity = document.querySelector("#activity");
+const activityEvents = document.querySelector("#activity-events");
+const loadButton = document.querySelector("#load-button");
 const fractalStyles = new Set(["mandelbrot", "seahorse"]);
 let currentImage;
 
@@ -53,14 +56,15 @@ async function submit(settings) {
     body: JSON.stringify(settings),
   });
   return { id: body.job_id, url: `/jobs/${encodeURIComponent(body.job_id)}`,
-    traceId: response.headers.get("X-Trace-ID") };
+    traceId: response.headers.get("X-Trace-ID"), status: response.status };
 }
 
-async function waitForJob(submission, update) {
+async function waitForJob(submission, update, observe = () => {}) {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 750));
-    const { body: job } = await requestJson(submission.url);
+    const { body: job, response } = await requestJson(submission.url);
+    observe(job, response);
     if (job.status === "failed") throw new Error("Rendering failed.");
     if (job.status === "completed") return job;
     update(job.status === "processing" ? "Rendering…" : "Queued…");
@@ -69,7 +73,13 @@ async function waitForJob(submission, update) {
 }
 
 function setBusy(busy) {
-  button.disabled = seedBatchButton.disabled = zoomCenter.disabled = busy;
+  button.disabled = seedBatchButton.disabled = zoomCenter.disabled = loadButton.disabled = busy;
+}
+
+function addActivity(text) {
+  const item = document.createElement("li");
+  item.textContent = text;
+  activityEvents.append(item);
 }
 
 function updateZoomControls() {
@@ -84,6 +94,8 @@ async function renderOne(settings, label, before) {
   currentImage = undefined;
   updateZoomControls();
   details.hidden = preview.hidden = download.hidden = batchResults.hidden = true;
+  activity.hidden = true;
+  activityEvents.replaceChildren();
   previousFigure.hidden = !before;
   if (before) previous.src = before.url;
   statusLine.classList.remove("error");
@@ -94,12 +106,29 @@ async function renderOne(settings, label, before) {
     document.querySelector("#job-id").textContent = submission.id;
     document.querySelector("#trace-id").textContent = submission.traceId || "Unavailable";
     details.hidden = false;
+    activity.hidden = false;
+    activity.open = true;
+    addActivity(`HTTP ${submission.status} Accepted · Job saved in PostgreSQL`);
     statusLine.textContent = "Queued…";
-    const job = await waitForJob(submission, (message) => { statusLine.textContent = message; });
+    let lastStatus;
+    const job = await waitForJob(submission, (message) => { statusLine.textContent = message; }, (current) => {
+      if (current.status === lastStatus) return;
+      lastStatus = current.status;
+      if (current.started_at) {
+        const worker = current.worker_name || "Worker";
+        if (current.status === "processing" || !activityEvents.querySelector("[data-worker-start]")) {
+          addActivity(`${worker} started rendering at ${new Date(current.started_at).toLocaleTimeString()}`);
+          activityEvents.lastElementChild.dataset.workerStart = "";
+        }
+      }
+      if (current.status === "queued") addActivity("API reported the job as queued.");
+      if (current.finished_at) addActivity(`Job ${current.status} at ${new Date(current.finished_at).toLocaleTimeString()}`);
+    });
     const url = `${submission.url}/image`;
     const image = new Image();
     image.src = url;
     await image.decode();
+    addActivity("Browser loaded the PNG.");
     preview.src = url;
     preview.alt = label;
     download.href = url;
@@ -108,6 +137,13 @@ async function renderOne(settings, label, before) {
     currentImage = { url, settings, label };
     updateZoomControls();
     statusLine.textContent = job.worker_name ? `Completed. Worker ${job.worker_name}` : "Completed.";
+    try {
+      const { response: statusResponse } = await requestJson(submission.url);
+      const cache = statusResponse.headers.get("X-Cache");
+      if (cache) addActivity(`Repeated status read · X-Cache: ${cache}`);
+    } catch {
+      addActivity("Repeated status check failed.");
+    }
   } catch (error) {
     statusLine.classList.add("error");
     statusLine.textContent = error.message;
@@ -184,6 +220,7 @@ async function renderBatch(makeEntries) {
   currentImage = undefined;
   updateZoomControls();
   details.hidden = preview.hidden = previousFigure.hidden = download.hidden = true;
+  activity.hidden = true;
   batchResults.replaceChildren();
   batchResults.hidden = false;
   statusLine.classList.remove("error");

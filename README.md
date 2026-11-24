@@ -1,36 +1,56 @@
 # Distributed Image Rendering Farm
 
-A distributed systems assignment that generates Mandelbrot PNGs asynchronously.
-The FastAPI gateway accepts requests and rate-limits submissions. The Render API
-stores jobs and outbox entries in PostgreSQL. A publisher sends the job IDs to a
-Redis Stream, and workers render images into a shared Docker volume.
+A distributed systems project that generates fractal art, sunset skylines, and
+geometric patterns as PNGs. Submit jobs from the browser or API, track their
+progress, and download the finished images.
+
+The FastAPI gateway validates and rate-limits submissions. The Render API
+writes each job and its outbox entry in one PostgreSQL transaction, then returns
+the job ID. A publisher sends the job to Redis Streams, and an available worker
+writes the PNG to a shared Docker volume. Redis also caches completed job
+statuses. See the [architecture and data flows](docs/architecture.md).
 
 ## Run locally
 
-Start Docker Desktop on Windows, then run this from the repository root.
+Start Docker Desktop on Windows, then run these commands in PowerShell from the
+repository root. Use `--build` on a fresh checkout or after changing the source.
 
 ```powershell
 docker compose up -d --build --scale worker=2 --wait
 docker compose ps -a
 curl.exe -i http://localhost:8080/health
+Start-Process 'http://localhost:8080/'
+```
+
+If the build hits a package-download timeout and your machine already has the
+images for this version, start them with:
+
+```powershell
+docker compose up -d --no-build --scale worker=2 --wait
 ```
 
 The `migrate` service exits with code 0 after applying the idempotent SQL files
 in `db/migrations`. The Render API, publisher, and workers start after
 migrations succeed. Compose retains the PostgreSQL, Redis, and image volumes.
+Run `docker compose down` from the repository root when you finish.
 
 ## Submit, poll, and download
 
 ```powershell
 $base = 'http://localhost:8080'
-$settings = @{ width = 256; height = 256; max_iterations = 100 } | ConvertTo-Json
+$settings = @{ width = 640; height = 360; style = 'skyline'; seed = 42 } | ConvertTo-Json
 $job = Invoke-RestMethod -Method Post -Uri "$base/render" -ContentType 'application/json' -Body $settings
 $job
 
-Invoke-RestMethod "$base/jobs/$($job.job_id)"
-# Repeat the status request until it reports completed, then download the image.
-curl.exe -f "$base/jobs/$($job.job_id)/image" -o render.png
-curl.exe -i "$base/jobs/$($job.job_id)"
+$url = "$base/jobs/$($job.job_id)"
+for ($i = 0; $i -lt 30; $i++) {
+    $status = Invoke-RestMethod $url
+    if ($status.status -in 'completed', 'failed') { break }
+    Start-Sleep -Seconds 1
+}
+if ($status.status -ne 'completed') { throw "Render status is $($status.status)" }
+curl.exe -f "$url/image" -o skyline.png
+curl.exe -i $url
 ```
 
 `POST /render` returns HTTP 202. Dimensions range from 1 through 2048, and
@@ -60,21 +80,25 @@ IDs. API clients can send a `seed` integer from 0 to 2147483647 with
 
 ## Art styles
 
-To generate a different image, include `style` in the JSON body when you submit
-a job. These examples work with the `$base` variable from the submission example.
-Poll and download each job using its own ID.
+| Browser label | API `style` | Output |
+| --- | --- | --- |
+| Sunset skyline | `skyline` | A city at sunset. The optional `seed` controls building heights, widths, and lit windows. |
+| Mandelbrot | `mandelbrot` | The original blue fractal and the default API style. |
+| Seahorse Valley | `seahorse` | A purple close-up of the Mandelbrot boundary. |
+| Geometric rosette | `geometric` | A pattern made from rotating polygons. |
 
-```powershell
-$skyline = Invoke-RestMethod -Method Post -Uri "$base/render" -ContentType 'application/json' -Body '{"width":640,"height":360,"style":"skyline"}'
-$seahorse = Invoke-RestMethod -Method Post -Uri "$base/render" -ContentType 'application/json' -Body '{"width":512,"height":512,"max_iterations":220,"style":"seahorse"}'
-```
-
-The default `mandelbrot` style renders the original blue fractal. `seahorse`
-renders a purple close-up of its boundary. `skyline` draws a city at sunset
-using geometric shapes and uses only the requested width and height.
-`geometric` draws a rosette from rotating polygons.
+The fractal styles accept `max_iterations` and an optional `viewport` object.
+The viewport uses normalized `x` and `y` coordinates from 0 to 1 and a
+`scale` from 1/1024 to 1. For example, `{"x":0.62,"y":0.39,"scale":0.5}`
+requests a 2× zoom centered near that point of the style's original view.
 
 ## Load test and recovery demo
+
+The browser's **Job activity** panel shows the selected render's accepted
+response, worker timestamps, PNG preview, and repeated status cache result.
+Use the trace ID in the service logs to see internal events such as publication
+to the Redis Stream. In the browser, select **Run load test** to send 20
+requests and see response counts, completed renders, latency, and cache hits.
 
 Run the dependency-free load test with Python 3, or use the gateway container's
 Python as shown here. The script reports HTTP response counts, submission
@@ -114,7 +138,7 @@ the stack while retaining the volumes.
 
 ## Local verification
 
-Two workers shared a burst of 20 submissions with concurrency set to 10
+In the baseline benchmark, two workers shared a burst of 20 submissions with concurrency set to 10
 on Docker Desktop. Each request asked for a 256 × 256 image with
 100 iterations. Both runs returned five accepted submissions and 15
 rate-limit responses. All accepted jobs completed and returned PNGs,
@@ -153,17 +177,17 @@ Run the following from the repository root in PowerShell.
 
 | Time | Demonstrate |
 | --- | --- |
-| 0:00–1:30 | Run `docker compose up -d --build --scale worker=2 --wait`, show `docker compose ps -a`, and open `/health`. |
-| 1:30–3:00 | Submit and poll the job below. Explain validation and the token bucket in `gateway/main.py`. |
+| 0:00–1:30 | Start the stack with the local run command, show `docker compose ps -a`, and open `/health`. |
+| 1:30–3:00 | Open the browser frontend and select **Compare skyline seeds**. Show the two matching seed 42 images, the different seed 99 image, and the worker IDs. |
 | 3:00–5:00 | Filter the logs by trace ID. Walk through the API transaction, the outbox publisher, Redis Streams, the worker's database update, and the cache hit. |
 | 5:00–7:00 | Run the concurrent load test. Explain the 202 and 429 counts, throughput, and p95 status read latency. |
 | 7:00–8:30 | Stop the publisher, submit a job, show its queued status, then restart the publisher and show completion. |
-| 8:30–10:00 | Download the PNG, discuss the report's burst-test limits, and take questions. |
+| 8:30–10:00 | Render a Mandelbrot image, click its boundary to zoom, and download the result. Discuss the report's burst-test limits. |
 
 ```powershell
 $base = 'http://localhost:8080'
 $body = @{ width = 256; height = 256 } | ConvertTo-Json
-$submitted = Invoke-WebRequest -Method Post -Uri "$base/render" -ContentType 'application/json' -Body $body
+$submitted = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$base/render" -ContentType 'application/json' -Body $body
 $trace = [string]$submitted.Headers['X-Trace-ID']
 $id = ($submitted.Content | ConvertFrom-Json).job_id
 for ($i = 0; $i -lt 30; $i++) {
@@ -172,7 +196,7 @@ for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Seconds 1
 }
 if ($job.status -ne 'completed') { throw "Render status is $($job.status)" }
-$cached = Invoke-WebRequest "$base/jobs/$id"
+$cached = Invoke-WebRequest -UseBasicParsing "$base/jobs/$id"
 $cached.Headers['X-Cache']
 docker compose logs --no-color gateway render-api publisher worker | Select-String -SimpleMatch $trace
 curl.exe -f "$base/jobs/$id/image" -o render.png
