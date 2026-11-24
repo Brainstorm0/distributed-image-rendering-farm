@@ -34,9 +34,18 @@ def render_png(job_id, width, height, iterations):
     temporary = OUTPUT_DIR / f"{job_id}.{CONSUMER}.tmp"
 
     try:
-        fractal = Image.effect_mandelbrot(
-            (width, height), (-2.2, -1.3, 0.8, 1.3), iterations
-        )
+        if iterations == 1:
+            # The viewport is inside Pillow's escape radius after one iteration.
+            fractal = Image.new("L", (width, height))
+        else:
+            # Pillow divides by dimension minus one. Sample the viewport center
+            # on any single-pixel axis and crop off its duplicate sample.
+            left, right = (-0.7, -0.7) if width == 1 else (-2.2, 0.8)
+            top, bottom = (0.0, 0.0) if height == 1 else (-1.3, 1.3)
+            size = (max(width, 2), max(height, 2))
+            fractal = Image.effect_mandelbrot(size, (left, top, right, bottom), iterations)
+            if size != (width, height):
+                fractal = fractal.crop((0, 0, width, height))
         image = ImageOps.colorize(fractal, "#080f24", "#52d6e8")
         image.save(temporary, format="PNG")
         temporary.replace(output)

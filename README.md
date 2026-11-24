@@ -80,5 +80,36 @@ locks serialize duplicate deliveries for the same job, and workers acknowledge
 messages after writing the terminal job status. `docker compose down` stops
 the stack while retaining the volumes.
 
+## Local verification
+
+Two workers shared a burst of 20 submissions with concurrency set to 10
+on Docker Desktop. Each request asked for a 256 × 256 image with
+100 iterations. Both runs returned five accepted submissions and 15
+rate-limit responses. All accepted jobs completed and returned PNGs,
+and both worker containers logged completed jobs.
+
+| Measurement | Cache enabled | Cache disabled |
+| --- | ---: | ---: |
+| Submission latency, p50 / p95 | 14.33 / 148.98 ms | 26.05 / 175.95 ms |
+| Accepted submissions per second | 31.99 | 27.36 |
+| Completed renders per second | 4.63 | 6.11 |
+| Repeated status read latency, p50 / p95 | 28.73 / 43.91 ms | 70.87 / 116.77 ms |
+| Repeated status cache results | 25 hits | 25 bypasses |
+
+Submission latency includes both HTTP response codes. Throughput reflects a
+short burst from a single client IP. Completion throughput includes polling
+time and can vary with the publisher's one-second polling interval.
+
+An outage check confirmed that a submission persisted in PostgreSQL while the
+publisher was stopped. After restart, an interrupted test consumer left the
+message pending. A worker reclaimed it, completed the 1 × 1 image in one
+render attempt, and the gateway served the PNG and a cached status response.
+A separate check confirmed that stopping mock B produced HTTP 503 with
+individual node statuses, and that restarting it restored health.
+
+Docker's package downloads timed out during the clean build attempt. The
+application checks used a cached Python image and checksum-verified wheels
+for the project's pinned dependencies.
+
 See [architecture and data flows](docs/architecture.md) for the Phase 1 and
 current deployments.
